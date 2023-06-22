@@ -1,10 +1,11 @@
 const express = require('express');
 const cors = require('cors');
+const logger = require('./logger');
 
 const app = express();
 app.use(express.json());
 
-const whitelist = ["http://localhost:3001"];
+const whitelist = ["http://localhost:3000"];
 const corsOptions = {
   origin: function(origin, callback) {
     if (!origin || whitelist.indexOf(origin) !== -1) {
@@ -28,7 +29,8 @@ app.use('', routes);
 
 app.use((err, req, res, next) => {
   const statusCode = err.statusCode || 500;
-  console.error(err.message, err.stack);
+  logger.error(err.message);
+  logger.error(err.stack);
   res.status(statusCode).json({'message': err.message});
   
   return;
@@ -36,4 +38,4 @@ app.use((err, req, res, next) => {
 
 const config = require('./config');
 
-app.listen(config.PORT, console.log(`Listening on port ${config.PORT}...`));
+app.listen(config.PORT, logger.info(`Listening on port: ${config.PORT}`));
