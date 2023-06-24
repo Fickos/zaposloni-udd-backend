@@ -1,9 +1,15 @@
+const fs = require('fs');
+
 const express = require('express');
 const router = express.Router();
+
+const multer = require('multer');
+const upload = multer({ dest: 'uploads/' });
 
 const logger = require('../logger');
 require('../entityFactory');
 const { JobApplication } = require('../entityFactory/models');
+const { indexDocument } = require('../elastic');
 
 router.get('/', async (req, res, next) => {
     try {
@@ -30,8 +36,30 @@ router.get('/:id', async (req, res, next) => {
     }
 });
 
-router.post('/', async (req, res, next) => {
+router.post('/', 
+    upload.fields([
+        { name: 'cv', maxCount: 1 },
+        { name: 'coverLetter', maxCount: 1 },
+    ]),
+    async (req, res, next) => {
     try {
+        const cv = req.files?.['cv']?.[0];
+        const coverLetter = req.files?.['coverLetter']?.[0];
+
+        if (cv) {
+            console.log(cv);
+            const cvBuffer = fs.readFileSync(cv.path);
+            console.log(cv.originalname);
+            await indexDocument('cv_index', cvBuffer, cv.originalname);
+        }
+
+        if (coverLetter) {
+            const coverLetterBuffer = fs.readFileSync(coverLetter.path);
+            console.log(coverLetter.originalname);
+            await indexDocument('cover_letter_index', coverLetterBuffer, coverLetter.originalname);
+        }
+        
+        req.body = JSON.parse(req.body.jsonData);
         const newJobApplication = new JobApplication(req.body);
         
         const result = await newJobApplication.save();

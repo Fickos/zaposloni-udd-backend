@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const config = require('./config');
 const logger = require('./logger');
 
 const app = express();
@@ -19,11 +20,6 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-// const userRouter = require('./routes/users.route');
-// const modelRouter = require('./routes/model.route');
-
-// app.use('/users', userRouter);
-// app.use('/model', modelRouter);
 const routes = require('./routes');
 app.use('', routes);
 
@@ -36,6 +32,29 @@ app.use((err, req, res, next) => {
   return;
 });
 
-const config = require('./config');
+const { elasticClient } = require('./elastic');
+
+elasticClient.ping({
+  requestTimeout: 3000
+}, function (error) {
+if (error) {
+  console.trace('elasticsearch cluster is down!');
+} else {
+  console.log('Elastic search is running.');
+}
+});
+
+console.log(elasticClient.indices);
+
+elasticClient.indices.create({
+  index: 'index_example',
+  requestTimeout: 300000
+}).then(function (resp) {
+  console.log('SUPEER');
+  console.log(resp);
+}, function (err) {
+  console.log('ERORCINAA');
+  console.log(err.message);
+});
 
 app.listen(config.PORT, logger.info(`Listening on port: ${config.PORT}`));
