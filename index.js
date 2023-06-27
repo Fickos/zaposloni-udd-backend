@@ -46,15 +46,25 @@ if (error) {
 
 console.log(elasticClient.indices);
 
-elasticClient.indices.create({
-  index: 'index_example',
-  requestTimeout: 300000
+elasticClient.indices.exists({
+  index: 'index_example'
 }).then(function (resp) {
-  console.log('SUPEER');
-  console.log(resp);
+    if (resp) {
+      logger.info('Index exists');
+    } else {
+      elasticClient.indices.create({
+        index: 'index_example',
+        requestTimeout: 300000
+      }).then(function (resp) {
+         logger.info("New index created");
+      }, function (err) {
+         logger.error('Error while creating an index');
+         logger.error(err.message);
+      });
+    }
 }, function (err) {
-  console.log('ERORCINAA');
-  console.log(err.message);
-});
+  logger.error('Error while checking whether index exists');
+  logger.error(err.message);
+})
 
 app.listen(config.PORT, logger.info(`Listening on port: ${config.PORT}`));

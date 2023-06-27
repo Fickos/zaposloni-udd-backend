@@ -9,7 +9,9 @@ const upload = multer({ dest: 'uploads/' });
 const logger = require('../logger');
 require('../entityFactory');
 const { JobApplication } = require('../entityFactory/models');
-const { indexDocument } = require('../elastic');
+const { indexDocument, search } = require('../elastic');
+const { extractTextFromPDF } = require('../utils/pdf.utils');
+const { mapClientQueryToElasticsearchQuery } = require('../utils/mapper.utils');
 
 router.get('/', async (req, res, next) => {
     try {
@@ -45,21 +47,22 @@ router.post('/',
     try {
         const cv = req.files?.['cv']?.[0];
         const coverLetter = req.files?.['coverLetter']?.[0];
+        req.body = JSON.parse(req.body.jsonData);
 
         if (cv) {
-            console.log(cv);
             const cvBuffer = fs.readFileSync(cv.path);
-            console.log(cv.originalname);
-            await indexDocument('cv_index', cvBuffer, cv.originalname);
+            const cvContent = await extractTextFromPDF(cvBuffer);
+            console.log('BEFORE INDEXING: ', cvContent);
+            await indexDocument('cv_index2', cv.filename ?? '', cvContent, cv.originalname, req.body);
         }
 
         if (coverLetter) {
             const coverLetterBuffer = fs.readFileSync(coverLetter.path);
-            console.log(coverLetter.originalname);
-            await indexDocument('cover_letter_index', coverLetterBuffer, coverLetter.originalname);
+            const coverLetterContent = await extractTextFromPDF(coverLetterBuffer);
+            console.log('BEFORE INDEXING: ', coverLetterContent);
+            await indexDocument('cover_letter_index2', coverLetter.filename ?? '', coverLetterContent, coverLetter.originalname, req.body);
         }
         
-        req.body = JSON.parse(req.body.jsonData);
         const newJobApplication = new JobApplication(req.body);
         
         const result = await newJobApplication.save();
@@ -94,6 +97,84 @@ router.put('/:id', async (req, res, next) => {
         logger.error(e);
         res.status(400).send({ message: "bad_request" });
     }
+});
+
+router.post('/search', async (req, res, next) => {
+    const paramsList = [
+        "name",
+        "surname",
+        "education",
+    ];
+    const results = { };
+    const searchBody = { query: { match : {} }};
+
+    for (let p of paramsList) {
+        if (req.body?.[p]) {
+            searchBody.query.match[p] = req.body?.[p];
+        }
+    }
+
+    if (req.body?.cvContent) {
+        searchBody.query.match.content = req.body?.cvContent;
+        logger.info('Search body', searchBody);
+
+        const result = await search('cv_index2', searchBody);
+        results.cv = result;
+    }
+
+    if (req.body?.coverLetterContent) {
+        searchBody.query.match.content = req.body?.coverLetterContent;
+        logger.info('Search body', searchBody);
+
+        const result = await search('cover_letter_index2', searchBody);
+        results.cl = result;
+    }
+
+    if (!req.body?.cvContent && !req.body?.coverLetterContent) {
+        logger.info('Search body', searchBody);
+        
+        const result = await search('cover_letter_index2', searchBody);
+        results.cv = result;
+    }
+
+    res.status(200).send(results);
+});
+
+router.post('/boolean-search', async (req, res, next) => {
+    logger.info('Received boolean query: ', req.body);
+    // TO DO FIX MAPPER TO THE BOOLEAN QUERY FROM CLIENT SIDE
+    // const boolQueryBody = mapClientQueryToElasticsearchQuery(req.body);
+
+    // EXAMPLE -> (Hello && world) || (Hi && !world);
+    // const boolQueryBody = {
+    //     query: {
+    //         bool: {
+    //             should: [
+    //               {
+    //                 bool: {
+    //                   must: [
+    //                     { match: { content: 'Hello' } },
+    //                     { match: { content: 'world' } }
+    //                   ]
+    //                 }
+    //               },
+    //               {
+    //                 bool: {
+    //                   must: [
+    //                     { match: { content: 'Hi' } },
+    //                     { bool: { must_not: { match: { content: 'world' } } } }
+    //                   ]
+    //                 }
+    //               }
+    //             ]
+    //           }
+    //     }
+    // }
+    console.log(JSON.stringify(boolQueryBody));
+    const result = await search('cv_index2', boolQueryBody);
+
+    res.status(200).send(result);
+
 });
 
 module.exports = router;
