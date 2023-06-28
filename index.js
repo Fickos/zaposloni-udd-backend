@@ -47,13 +47,26 @@ if (error) {
 console.log(elasticClient.indices);
 
 elasticClient.indices.exists({
-  index: 'index_example'
+  index: 'cv_with_geo'
 }).then(function (resp) {
     if (resp) {
       logger.info('Index exists');
     } else {
       elasticClient.indices.create({
-        index: 'index_example',
+        index: 'cv_with_geo',
+        body: {
+          mappings: {
+            properties: {
+              name: { type: 'text' },
+              surname: { type: 'text' },
+              education: { type: 'text' },
+              address: { type: 'text' },
+              content: { type: 'text' },
+              fileName: { type: 'text'},
+              location: { type: 'geo_point' }
+            },
+          },
+        },
         requestTimeout: 300000
       }).then(function (resp) {
          logger.info("New index created");

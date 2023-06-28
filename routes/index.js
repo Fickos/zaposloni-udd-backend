@@ -1,5 +1,6 @@
 const fs = require('fs');
 
+const axios = require('axios');
 const express = require('express');
 const router = express.Router();
 
@@ -8,6 +9,7 @@ const upload = multer({ dest: 'uploads/' });
 
 const logger = require('../logger');
 require('../entityFactory');
+const config = require('../config');
 const { JobApplication } = require('../entityFactory/models');
 const { indexDocument, search } = require('../elastic');
 const { extractTextFromPDF } = require('../utils/pdf.utils');
@@ -49,17 +51,26 @@ router.post('/',
         const coverLetter = req.files?.['coverLetter']?.[0];
         req.body = JSON.parse(req.body.jsonData);
 
+        const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${req.body.address}&key=${config.GOOGLE_API_KEY}`;
+
+        const response = await axios.get(url);
+
+        const lat = response.data?.results?.[0]?.geometry?.location?.lat ?? 45.014566;
+        const lon = response.data?.results?.[0]?.geometry?.location?.lng ?? 19.805530;
+
+        req.body.location = { lat, lon }; 
+
         if (cv) {
             const cvBuffer = fs.readFileSync(cv.path);
             const cvContent = await extractTextFromPDF(cvBuffer);
-            console.log('BEFORE INDEXING: ', cvContent);
-            await indexDocument('cv_index2', cv.filename ?? '', cvContent, cv.originalname, req.body);
+            
+            await indexDocument('cv_with_geo', cv.filename ?? '', cvContent, cv.originalname, req.body);
         }
 
         if (coverLetter) {
             const coverLetterBuffer = fs.readFileSync(coverLetter.path);
             const coverLetterContent = await extractTextFromPDF(coverLetterBuffer);
-            console.log('BEFORE INDEXING: ', coverLetterContent);
+            
             await indexDocument('cover_letter_index2', coverLetter.filename ?? '', coverLetterContent, coverLetter.originalname, req.body);
         }
         
@@ -118,7 +129,7 @@ router.post('/search', async (req, res, next) => {
         searchBody.query.match.content = req.body?.cvContent;
         logger.info('Search body', searchBody);
 
-        const result = await search('cv_index2', searchBody);
+        const result = await search('cv_with_geo', searchBody);
         results.cv = result;
     }
 
@@ -170,11 +181,30 @@ router.post('/boolean-search', async (req, res, next) => {
     //           }
     //     }
     // }
-    console.log(JSON.stringify(boolQueryBody));
-    const result = await search('cv_index2', boolQueryBody);
+    // console.log(JSON.stringify(boolQueryBody));
+    const result = await search('cv_with_geo', boolQueryBody);
 
     res.status(200).send(result);
 
+});
+
+router.post('/geo-search', async (req, res, next) => {
+    const { lat, lon, radius } = req.body;
+    
+    const geoQueryBody = {
+        query: {
+            geo_distance: {
+                distance: `${radius}km`,
+                location: {
+                    lat: lat, lon: lon
+                }
+            }
+        }
+    };
+
+    const result = await search('cv_with_geo', geoQueryBody);
+
+    res.status(200).send(result);
 });
 
 module.exports = router;

@@ -4,6 +4,9 @@ const jobApplicationSchema = new mongoose.Schema({
   name: String,
   surname: String,
   email: String,
+  address: String,
+  lat: Number,
+  lon: Number,
   resume: String,
   coverLetter: String,
 });
