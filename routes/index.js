@@ -27,7 +27,7 @@ router.get('/', async (req, res, next) => {
     }
 });
 
-router.get('/:id', async (req, res, next) => {
+router.get('id/:id', async (req, res, next) => {
     try {
         const id = req.params.id;
         const result = await JobApplication.findById(id);
@@ -59,7 +59,7 @@ router.post('/',
         const lon = response.data?.results?.[0]?.geometry?.location?.lng ?? 19.805530;
 
         req.body.location = { lat, lon }; 
-
+        console.log('HERE HERE HERE', cv);
         if (cv) {
             const cvBuffer = fs.readFileSync(cv.path);
             const cvContent = await extractTextFromPDF(cvBuffer);
@@ -116,75 +116,56 @@ router.post('/search', async (req, res, next) => {
         "surname",
         "education",
     ];
-    const results = { };
+    let results = null;
     const searchBody = { query: { match : {} }};
+    try {
 
-    for (let p of paramsList) {
-        if (req.body?.[p]) {
-            searchBody.query.match[p] = req.body?.[p];
+        for (let p of paramsList) {
+            if (req.body?.[p]) {
+                searchBody.query.match[p] = req.body?.[p];
+            }
         }
+    
+        if (req.body?.cvContent) {
+            searchBody.query.match.content = req.body?.cvContent;
+            logger.info('Search body', searchBody);
+    
+            const result = await search('cv_with_geo', searchBody);
+            results = result;
+        }
+    
+        if (req.body?.coverLetterContent) {
+            searchBody.query.match.content = req.body?.coverLetterContent;
+            logger.info('Search body', searchBody);
+    
+            const result = await search('cover_letter_index2', searchBody);
+            results = result;
+        }
+    
+        if (!req.body?.cvContent && !req.body?.coverLetterContent) {
+            logger.info('Search body', searchBody);
+            
+            const result = await search('cover_letter_index2', searchBody);
+            results = result;
+        }
+    
+        res.status(200).send(results);
+    } catch (e) {
+        res.status(400).send({ message: e.message });
     }
-
-    if (req.body?.cvContent) {
-        searchBody.query.match.content = req.body?.cvContent;
-        logger.info('Search body', searchBody);
-
-        const result = await search('cv_with_geo', searchBody);
-        results.cv = result;
-    }
-
-    if (req.body?.coverLetterContent) {
-        searchBody.query.match.content = req.body?.coverLetterContent;
-        logger.info('Search body', searchBody);
-
-        const result = await search('cover_letter_index2', searchBody);
-        results.cl = result;
-    }
-
-    if (!req.body?.cvContent && !req.body?.coverLetterContent) {
-        logger.info('Search body', searchBody);
-        
-        const result = await search('cover_letter_index2', searchBody);
-        results.cv = result;
-    }
-
-    res.status(200).send(results);
 });
 
 router.post('/boolean-search', async (req, res, next) => {
-    logger.info('Received boolean query: ', req.body);
-    // TO DO FIX MAPPER TO THE BOOLEAN QUERY FROM CLIENT SIDE
-    // const boolQueryBody = mapClientQueryToElasticsearchQuery(req.body);
-
-    // EXAMPLE -> (Hello && world) || (Hi && !world);
-    // const boolQueryBody = {
-    //     query: {
-    //         bool: {
-    //             should: [
-    //               {
-    //                 bool: {
-    //                   must: [
-    //                     { match: { content: 'Hello' } },
-    //                     { match: { content: 'world' } }
-    //                   ]
-    //                 }
-    //               },
-    //               {
-    //                 bool: {
-    //                   must: [
-    //                     { match: { content: 'Hi' } },
-    //                     { bool: { must_not: { match: { content: 'world' } } } }
-    //                   ]
-    //                 }
-    //               }
-    //             ]
-    //           }
-    //     }
-    // }
-    // console.log(JSON.stringify(boolQueryBody));
-    const result = await search('cv_with_geo', boolQueryBody);
-
-    res.status(200).send(result);
+    console.log(req?.body?.query);
+    try {
+        const boolQueryBody = mapClientQueryToElasticsearchQuery(req.body.query);
+        const result = await search('cv_with_geo', {query: boolQueryBody});
+    
+        res.status(200).send(result);
+    } catch (e) {
+        logger.error(e);
+        res.status(400).send({ message: e.message });
+    }
 
 });
 
@@ -206,5 +187,27 @@ router.post('/geo-search', async (req, res, next) => {
 
     res.status(200).send(result);
 });
+
+router.get('/phrase-search', async (req, res, next) => {
+    const { phraseValue } = req.query;
+    const params = ["name", "surname", "education", "address", "cvContent", "coverLetterContent"];
+
+    try {
+        const phraseQueryBody = {
+            query: {
+                multi_match: {
+                    query: phraseValue,
+                    type: 'phrase',
+                    fields: params
+                }
+            }
+        }
+        
+        const result = await search('cv_with_geo', phraseQueryBody);
+        res.status(200).send(result);
+    } catch (e) {
+        res.status(400).send({ message: e.message });
+    }
+})
 
 module.exports = router;

@@ -63,6 +63,7 @@ elasticClient.indices.exists({
               address: { type: 'text' },
               content: { type: 'text' },
               fileName: { type: 'text'},
+              coverLetterContent: { type: 'text' },
               location: { type: 'geo_point' }
             },
           },
