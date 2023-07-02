@@ -10,13 +10,12 @@ const elasticClient = new elasticsearch.Client({
 
 module.exports.elasticClient = elasticClient;
 
-module.exports.indexDocument = async function (indexName, _id, fileData, fileName, uploaderInfo) {
+module.exports.indexDocument = async function (indexName, _id, fileName, uploaderInfo) {
     const response = await elasticClient.index({
       index: indexName,
       id: _id,
       body: {
         ...uploaderInfo,
-        content: fileData,
         fileName: fileName,
       },
     });
@@ -32,7 +31,8 @@ module.exports.search = async function (indexName, searchBody) {
       body: { ...searchBody, 
         highlight: {
           fields: {
-            content: { fragment_size: 50, number_of_fragments: 3 },
+            cvContent: { fragment_size: 50, number_of_fragments: 3 },
+            coverLetterContent: { fragment_size: 50, number_of_fragments: 1},
           },
       },}
     });

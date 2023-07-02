@@ -22,7 +22,7 @@ router.get('/', async (req, res, next) => {
         logger.info('Returning all job applications');
         res.status(200).send(result);
     } catch (e) {
-        logger.error(e);
+        logger.error(e.message);
         res.status(400).send();
     }
 });
@@ -59,32 +59,33 @@ router.post('/',
         const lon = response.data?.results?.[0]?.geometry?.location?.lng ?? 19.805530;
 
         req.body.location = { lat, lon }; 
-        console.log('HERE HERE HERE', cv);
+        
         if (cv) {
             const cvBuffer = fs.readFileSync(cv.path);
-            const cvContent = await extractTextFromPDF(cvBuffer);
+            req.body.cvContent = await extractTextFromPDF(cvBuffer);
             
-            await indexDocument('cv_with_geo', cv.filename ?? '', cvContent, cv.originalname, req.body);
+            // await indexDocument('zaposloni_analyzer', cv.filename ?? '', cvContent, cv.originalname, req.body);
         }
 
         if (coverLetter) {
             const coverLetterBuffer = fs.readFileSync(coverLetter.path);
-            const coverLetterContent = await extractTextFromPDF(coverLetterBuffer);
+            req.body.coverLetterContent = await extractTextFromPDF(coverLetterBuffer);
             
-            await indexDocument('cover_letter_index2', coverLetter.filename ?? '', coverLetterContent, coverLetter.originalname, req.body);
+            // await indexDocument('cover_letter_index2', coverLetter.filename ?? '', coverLetterContent, coverLetter.originalname, req.body);
         }
-        
+        console.log(req.body);
+        await indexDocument('zaposloni_analyzer', cv.filename ?? '', cv.originalname, req.body);
         const newJobApplication = new JobApplication(req.body);
         
         const result = await newJobApplication.save();
         
-        logger.info('Created Job application: ');
+        logger.info(`Created Job application: ${req.body.city}`, { city: req.body.city });
         logger.info(result);
 
         res.status(201).send({ message: "created", result });
 
     } catch (e) {
-        console.error(e);
+        logger.error(e);
         res.status(400).send({ message: "bad_request" });
     }
 });
@@ -105,7 +106,7 @@ router.put('/:id', async (req, res, next) => {
         logger.info(`Job application with ID: ${jobId} updated successfuly`);
         return res.status(200).send(updatedJobApplication);
     } catch (e) {
-        logger.error(e);
+        logger.error(e.message);
         res.status(400).send({ message: "bad_request" });
     }
 });
@@ -114,7 +115,10 @@ router.post('/search', async (req, res, next) => {
     const paramsList = [
         "name",
         "surname",
+        "address",
         "education",
+        "cvContent",
+        "coverLetterContent",
     ];
     let results = null;
     const searchBody = { query: { match : {} }};
@@ -125,32 +129,33 @@ router.post('/search', async (req, res, next) => {
                 searchBody.query.match[p] = req.body?.[p];
             }
         }
+        const results = await search('zaposloni_analyzer', searchBody);
+        // if (req.body?.cvContent) {
+        //     searchBody.query.match.cvContent = req.body?.cvContent;
+        //     logger.info('Search body', searchBody);
     
-        if (req.body?.cvContent) {
-            searchBody.query.match.content = req.body?.cvContent;
-            logger.info('Search body', searchBody);
+        //     const result = await search('zaposloni_analyzer', searchBody);
+        //     results = result;
+        // }
     
-            const result = await search('cv_with_geo', searchBody);
-            results = result;
-        }
+        // if (req.body?.coverLetterContent) {
+        //     searchBody.query.match.content = req.body?.coverLetterContent;
+        //     logger.info('Search body', searchBody);
     
-        if (req.body?.coverLetterContent) {
-            searchBody.query.match.content = req.body?.coverLetterContent;
-            logger.info('Search body', searchBody);
+        //     const result = await search('cover_letter_index2', searchBody);
+        //     results = result;
+        // }
     
-            const result = await search('cover_letter_index2', searchBody);
-            results = result;
-        }
-    
-        if (!req.body?.cvContent && !req.body?.coverLetterContent) {
-            logger.info('Search body', searchBody);
+        // if (!req.body?.cvContent && !req.body?.coverLetterContent) {
+        //     logger.info('Search body', searchBody);
             
-            const result = await search('cover_letter_index2', searchBody);
-            results = result;
-        }
+        //     const result = await search('cover_letter_index2', searchBody);
+        //     results = result;
+        // }
     
         res.status(200).send(results);
     } catch (e) {
+        logger.error(e.message);
         res.status(400).send({ message: e.message });
     }
 });
@@ -159,11 +164,11 @@ router.post('/boolean-search', async (req, res, next) => {
     console.log(req?.body?.query);
     try {
         const boolQueryBody = mapClientQueryToElasticsearchQuery(req.body.query);
-        const result = await search('cv_with_geo', {query: boolQueryBody});
+        const result = await search('zaposloni_analyzer', {query: boolQueryBody});
     
         res.status(200).send(result);
     } catch (e) {
-        logger.error(e);
+        logger.error(e.message);
         res.status(400).send({ message: e.message });
     }
 
@@ -183,9 +188,46 @@ router.post('/geo-search', async (req, res, next) => {
         }
     };
 
-    const result = await search('cv_with_geo', geoQueryBody);
+    const result = await search('zaposloni_analyzer', geoQueryBody);
 
     res.status(200).send(result);
+});
+
+router.post('/geo-search-drawing', async (req, res, next) => {
+    try {
+        const { polygonCoordinates } = req.body;
+    
+        const convertedCoordinates = polygonCoordinates.map(({ lat, lng }) => [
+            parseFloat(lng), parseFloat(lat)
+          ]);
+    
+        logger.info('Search by drawing', { searchType: 'draw' });
+    
+        const geoQueryBody = {
+            query: {
+                bool: {
+                  must: {
+                    match_all: {}
+                  },
+                  filter: {
+                    geo_polygon: {
+                      location: {
+                        points: 
+                          convertedCoordinates
+                      }
+                    }
+                  }
+                }
+              }
+        };
+    
+        const result = await search('zaposloni_analyzer', geoQueryBody);
+    
+        res.status(200).send(result);
+    } catch (e) {
+        logger.error(e);
+        res.status(400).send({ message: e.message });
+    }
 });
 
 router.get('/phrase-search', async (req, res, next) => {
@@ -203,11 +245,34 @@ router.get('/phrase-search', async (req, res, next) => {
             }
         }
         
-        const result = await search('cv_with_geo', phraseQueryBody);
+        const result = await search('zaposloni_analyzer', phraseQueryBody);
         res.status(200).send(result);
     } catch (e) {
+        logger.error(e.message);
         res.status(400).send({ message: e.message });
     }
-})
+});
+
+router.get('/download/:id', async (req, res) => {
+    try {
+      const id = req.params.id;
+  
+      const fileLocation = 'uploads/';
+      const fileName = `${id}`;
+  
+      const fileURL = `${fileLocation}\\${fileName}`;
+      console.log(fileURL);
+      const stream = fs.createReadStream(fileURL);
+  
+      res.set({
+        "Content-Disposition": `attachment; filename='${fileName}'`,
+        "Content-Type": "application/pdf",
+      });
+      stream.pipe(res);
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: e.message });
+    }
+});
 
 module.exports = router;

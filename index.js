@@ -47,13 +47,13 @@ if (error) {
 console.log(elasticClient.indices);
 
 elasticClient.indices.exists({
-  index: 'cv_with_geo'
+  index: 'zaposloni_analyzer'
 }).then(function (resp) {
     if (resp) {
       logger.info('Index exists');
     } else {
       elasticClient.indices.create({
-        index: 'cv_with_geo',
+        index: 'zaposloni_analyzer',
         body: {
           mappings: {
             properties: {
@@ -61,9 +61,9 @@ elasticClient.indices.exists({
               surname: { type: 'text' },
               education: { type: 'text' },
               address: { type: 'text' },
-              content: { type: 'text' },
               fileName: { type: 'text'},
-              coverLetterContent: { type: 'text' },
+              cvContent: { type: 'text', analyzer: "serbian" },
+              coverLetterContent: { type: 'text', analyzer: "serbian" },
               location: { type: 'geo_point' }
             },
           },
